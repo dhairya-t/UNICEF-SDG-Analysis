@@ -1,0 +1,740 @@
+---
+title: "UNICEF_SDG_ANALYSIS"
+author: "Avanti Tandon, Dhairya Thakkar, Leslie Liu, Nasywa Talitha"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# [Guiding Question: How is the Quality of Life of Children in Countries in Africa compared to Countries in Asia?] 
+
+
+```{r, message=FALSE}
+library(tidyverse)
+
+#Read the Data 
+
+country_indicators <- read_csv("country_indicators.csv")
+country_codes <- read_csv("country_codes.csv")
+sdg <- read_csv("sdr_fd5e4b5a.csv")
+
+```
+
+
+# [Research Question 1: Is the child mortality rates of countries in Africa higher than that of countries in Asia?] 
+
+## Data Cleaning and Wrangling
+```{r}
+
+data_1 <- country_indicators %>%
+  rename(codes = iso3,
+         under_5_mortality = 
+'sowc_child-mortality__infant-mortality-rate_2021', fivetofourteenmortality="sowc_child-mortality__mortality-rate-among-children-aged-5-14-years_2021") %>%
+  select(codes, under_5_mortality, fivetofourteenmortality) 
+
+data_2 <- country_codes %>% 
+  rename (region = `Region Name_en (M49)`,
+          codes = `ISO-alpha3 Code (M49)`,
+          country = `Country or Area_en (M49)`) %>% 
+  select(region, codes, country)
+
+data_clean <- inner_join(x = data_1, y = data_2, by = "codes")
+
+glimpse(data_1)
+glimpse(data_2)
+glimpse(data_clean)
+```
+
+```{r}
+africa <- data_clean %>% filter(region == "Africa") %>%
+  filter(!is.na(under_5_mortality)| !is.na(fivetofourteenmortality)) %>% 
+  distinct(.keep_all = TRUE) %>% 
+  select(region, country , under_5_mortality, fivetofourteenmortality) %>%
+  mutate(avg_mortality_rate = rowMeans(select(., under_5_mortality, fivetofourteenmortality)))
+
+asia <- data_clean %>% filter(region == "Asia") %>%
+  filter(!is.na(under_5_mortality)| !is.na(fivetofourteenmortality)) %>% 
+  distinct(.keep_all = TRUE) %>%
+  select(region, country , under_5_mortality, fivetofourteenmortality) %>%
+  mutate(avg_mortality_rate = rowMeans(select(., under_5_mortality, fivetofourteenmortality)))
+
+africa_asia_mortality<- data_clean %>% filter(region == "Asia"|region == "Africa") %>%
+  filter(!is.na(under_5_mortality)| !is.na(fivetofourteenmortality)) %>% 
+  distinct(.keep_all = TRUE) %>%
+  select(region, country , under_5_mortality, fivetofourteenmortality) %>%
+  mutate(avg_mortality_rate = rowMeans(select(., under_5_mortality, fivetofourteenmortality)))
+```
+
+## Visualization of the Raw Data
+
+```{r}
+# Histogram for infant mortality rate in 2021 for different regions
+data_clean <- data_clean %>% filter(!is.na(under_5_mortality)) %>% filter(region == "Africa" | region == "Asia")
+                                                                      
+                                    
+ggplot(data = data_clean, aes(x = under_5_mortality)) + geom_histogram(fill = 'lightblue', color = 'black', bins = 30) + labs(x = "infant mortality rate in 2021") + facet_wrap(~region)
+```
+
+
+
+*conclusion:*
+*Before applying any methods, based on the data, high child mortality rate in 2021 is generally contained in the histogram of Africa. As we are comparing Asia and Africa, the histograms show that high mortality rates in Asia are less than Africa, since Asia does not have any data for mortality rates higher than 10, but Africa contains data for almost the whole range. Asia histogram is right-skewed, and Africa histogram is almost symmetric, with a unimodal.*
+
+```{r}
+# Histogram for child mortality rate among age 5-14 years in 2021 for different regions
+data_clean <- data_clean %>% filter(!is.na(fivetofourteenmortality)) %>% filter(region == "Africa" | region == "Asia")
+                                    
+ggplot(data = data_clean, aes(x = fivetofourteenmortality)) + geom_histogram(fill = 'lightblue', color = 'black', bins = 30) + labs(x = "child mortality rate among age 5-14 years in 2021") + facet_wrap(~region)
+```
+*conclusion:*
+*Before applying any methods, based on the data, high child mortality rate in 2021 is generally contained in the histogram of Africa. As we are comparing Asia and Africa, the histograms show that high mortality rates in Asia are less than Africa, since Asia does not have any data for mortality rates higher than 10, but Africa contains data for almost the whole range. Asia histogram is right-skewed, and Africa histogram is almost symmetric, with a unimodal.*
+
+
+```{r}
+# Histogram for SDG Goal 3 Score
+sdg_score <- sdg %>% 
+  rename(country = country_label,
+         goal_3_trend = `Goal 3 Trend`,
+         goal_3_score = `Goal 3 Score`) %>%
+  select(country, goal_3_trend, goal_3_score)
+
+data_sdg <- inner_join(x = data_clean, y = sdg_score, by = "country")
+
+new_sdg <- data_sdg %>% filter(region == "Asia" | region == "Africa") %>%
+  filter(!is.na(under_5_mortality)) %>%
+  filter(!is.na(fivetofourteenmortality)) %>%
+  filter(!is.na(goal_3_score)) %>%
+  distinct(.keep_all = TRUE) %>%
+  select(region, country , under_5_mortality, fivetofourteenmortality, goal_3_trend, goal_3_score)
+
+ggplot(data = new_sdg, aes(x = goal_3_score)) + geom_histogram(bins = 20, color = "black", fill = "lightblue") + labs(x = "Goal 3 Score") + facet_wrap(~region)
+```
+
+*Conclusion:*
+*Based on the plots, Asian countries generally have a higher SDG Goal 3 scores, the plot is most likely left-skewed, the plot is concentrated at 75; and for African countries, they generally have lower scores than Asian countries, most data are concentrated around 50.*
+
+
+```{r}
+# Histogram for avg_mortality rate in 2021 for different regions
+
+                                                                      
+  ggplot(data = africa_asia_mortality, aes(x = avg_mortality_rate)) +
+  geom_histogram(fill = 'lightblue', color = 'black', bins = 30) +
+  labs(x = "average mortality rate in 2021") +
+  facet_wrap(~region)
+```
+
+
+
+## Two-sample Hypothesis Testing
+
+### Create a summary table 
+```{r}
+africa %>%  summarise(
+    n=n(),
+    mean = mean(avg_mortality_rate),
+    median = median(avg_mortality_rate), 
+    min = min(avg_mortality_rate),
+    max = max(avg_mortality_rate)
+  )
+asia %>%  summarise(
+    n=n(),
+  
+    mean = mean(avg_mortality_rate),
+    median = median(avg_mortality_rate), 
+    min = min(avg_mortality_rate),
+    max = max(avg_mortality_rate))
+```
+
+### Define Population Sample and Hypothesis
+
+Population: All countries in Africa and Asia
+
+Hypotheses: The null hypothesis assumes that the child mortality rate for countries in Africa and Asia is the same while the alternative hypothesis assumes that the child mortality rate for countries in Africa and Asia is not the same
+
+$H_0$ = Prop_Africa - Prop_Asia = 0
+
+$H_1$ = Prop_Africa - Prop_Asia > 0
+
+### Define our Test Statistics
+
+Our Test Statistics will be the difference in the median of the mortality rate between countries in Asia and Africa
+
+```{r}
+delta_median_obs_mortality <- 
+  africa_asia_mortality%>%
+  group_by(region) %>%
+  summarise(median_mortality = median(avg_mortality_rate), .groups="drop") %>%
+  summarise(value = diff(rev(median_mortality))) %>%
+  as.numeric()
+
+delta_median_obs_mortality
+```
+
+### Permutation Test 
+Below is R code that simulates N = 1000 values of the test statistic delta_median_obs_mortality under the null hypothesis using a permutation test. In this test, we assume that our groups are identical under our null hypothesis. Mixing the two groups together, randomly generating new groups with the same sizes, and then recomputing our test statistic each time therefore should allow us to simulate values from the sampling distribution provided our sample size is large enough.
+
+```{r}
+num_trials <- 1000  # number of permutations
+
+# random seed
+set.seed(1000000)
+
+# simulate!
+delta_median_simulations_mortality <- rep(NA, num_trials)
+for(i in 1:num_trials){
+  # perform a random permutation
+  simdata <- 
+    africa_asia_mortality%>% 
+    mutate(region = sample(region, replace=FALSE))
+  # compute the simulated test statistic
+  delta_median_sim <- 
+    simdata %>% 
+    group_by(region) %>%
+    summarise(median_mortality = median(avg_mortality_rate), .groups="drop") %>%
+    summarise(value = diff(rev(median_mortality))) %>%
+    as.numeric()
+  # store the simulated value
+  delta_median_simulations_mortality[i] <- delta_median_sim
+}
+```
+
+```{r}
+# Plot the simulated value 
+ggplot()+
+  geom_histogram(bins = 30, color = "black", fill = "yellow")+
+  aes(x= delta_median_simulations_mortality) +
+  labs(title = "Difference in Median between Asia and Africa")
+```
+
+```{r}
+# Calculate the 1-sided p-value
+p_value_one_sided_mortality<-sum(delta_median_simulations_mortality >= delta_median_obs_mortality) / num_trials
+
+p_value_one_sided_mortality
+```
+
+### Conclusion for two-sample hypothesis testing
+This permutation test assesses whether the observed difference in median mortality rates of children between Asia and Africa is statistically significant compared to what would be expected by chance under the null hypothesis (that there is no difference between the two regions). The $p$-value = 0 < $\alpha$ = 0.05 suggests that the observed difference is unlikely to have occurred by random chance alone, providing evidence against the null hypothesis. Thus, we can claim the median mortality rate of children in countries in Africa is higher than that of countries in Asia.
+
+## Bootstrapping
+
+```{r}
+repetitions <- 1000  
+sim_value_vector <- rep(NA, repetitions)
+```
+ 
+```{r}
+n <- 54                          
+repetitions <- repetitions         
+sim <- sim_value_vector 
+set.seed(1000000)   
+
+for (i in 1:repetitions)
+{
+  new_sim <- sample(africa$avg_mortality_rate ,size = n, replace=TRUE)
+  sim_median <- median(new_sim)
+  sim[i] <- sim_median
+}
+sim <- tibble(median = sim)
+```
+
+
+```{r}
+ggplot(data=sim, aes(x=median)) +
+  geom_histogram(color = "black",
+                 fill = "lightblue",
+                 bins= 20, binwidth = 1)
+```
+
+```{r}
+n2 <- 47                      # Define the sample size for each simulation
+repetitions2 <- repetitions   # Define the number of repetitions/simulations
+sim2 <- sim_value_vector      # Initialize a vector to store simulated median mortality rates
+
+set.seed(1000000)      
+
+for (i in 1:repetitions2)
+{
+  new_sim2 <- sample(asia$avg_mortality_rate ,size = n, replace=TRUE)
+  sim_median2 <- median(new_sim2)
+  sim2[i] <- sim_median2
+}
+sim2 <- tibble(median = sim2)
+```
+
+
+```{r}
+ggplot(data=sim2, aes(x=median)) +
+  geom_histogram(color = "black",
+                 fill = "pink",
+                 bins= 20, binwidth = 0.5)
+```
+
+```{r}
+lower_bound_africa <- quantile(sim$median, p=0.025)
+upper_bound_africa <- quantile(sim$median, p=0.975)
+median_africa<-quantile(sim$median, p=0.5)
+print(lower_bound_africa)
+print(upper_bound_africa)
+print(median_africa)
+```
+
+```{r}
+lower_bound_asia <- quantile(sim2$median, p=0.025)
+upper_bound_asia <- quantile(sim2$median, p=0.975)
+median_asia<-quantile(sim2$median, p=0.5)
+print(lower_bound_asia)
+print(upper_bound_asia)
+print(median_asia)
+```
+
+
+```{r}
+library(ggplot2)
+
+data <- data.frame(
+  group = factor(c("Africa", "Asia")),  # Ensure 'group' is treated as a factor
+  median = c(median_africa, median_asia),
+  ci_lower = c(lower_bound_africa, lower_bound_asia),
+  ci_upper = c(upper_bound_africa, upper_bound_asia)
+)
+
+ggplot() +
+  geom_boxplot(data = sim, aes(x = "Africa", y = median), fill = "lightgreen", color = "black", alpha = 0.5) +
+  geom_boxplot(data = sim2, aes(x = "Asia", y = median), fill = "lightpink", color = "black", alpha = 0.5) +
+  geom_hline(data = data, aes(yintercept = ci_lower), color = "red", linetype = "dashed") +
+  geom_hline(data = data, aes(yintercept = ci_upper), color = "red", linetype = "dashed") +
+  labs(title = "Bootstrapping Median Mortality Rates and Boxplot Distribution",
+       y = "Median Mortality Rate",
+       x = "Region",
+       caption = "Dashed lines indicate 95% confidence interval") +
+  theme_minimal()
+```
+
+### Conclusion for bootstrapping
+As we can see, the 95% confidence interval for the median mortality rate of children ranges from approximately 21.61 to 31.56 for countries in Africa, while The 95% confidence interval for the median mortality rate of children ranges from approximately 5.6 to 9.8 for countries in Asia. This suggests that 95% of the time, the true median mortality rate of children for countries in Africa is estimated to fall between approximately 21.61 and 31.56, Similarly, 95% of the time, the true median mortality rate of children for countries in Asia is estimated to fall between approximately 5.6 and 9.8. Importantly, both the upper and lower bounds of the confidence interval for Africa  are significantly higher than those for Asia, indicating a substantial difference in median mortality rates of children between the two regions.
+
+## Overall Conclusion for Research Question 1
+Our results result of the hypothesis test is supported by our bootstrapping test. From our hypothesis test, we can claim that the child mortality rate of countries in Africa is higher than that of countries in Asia. Moreover, our Bootstrapping method suggest that we are 95% confidence that the median mortality rate of children ranges from approximately 21.61 to 31.56 for countries in Africa and ranges from approximately 5.6 to 9.8 for countries in Asia. Therefore, we can conclude that the mortality rate of children for countries in Africa are higher than countries in Asia. 
+
+# [Research Question 2: How do the educational profiles of countries in Africa and Asia differ based on key indicators?]
+
+## Data Cleaning and Wrangling
+```{r}
+data_education <- country_indicators %>%
+   rename(codes = iso3) %>%
+  mutate(
+    completion_rate_lsecondary = 
+      (`sowc_education__completion_completion-rate-2013-2021-r_lower-secondary-education_male` + 
+                       `sowc_education__completion_completion-rate-2013-2021-r_lower-secondary-education_female`)/2,
+    literacy_rate_youth = (`sowc_education__learning_literacy-rate-2014-2022_youth-15-24-years-literacy-rate_male` +
+                     `sowc_education__learning_literacy-rate-2014-2022_youth-15-24-years-literacy-rate_female`) / 2,
+    ) %>%
+select(codes,completion_rate_lsecondary, literacy_rate_youth)
+
+```
+
+```{r}
+data_regions <- country_codes %>% 
+  rename (region = `Region Name_en (M49)`,
+          codes = `ISO-alpha3 Code (M49)`,
+          country = `Country or Area_en (M49)`) %>% 
+  select(region, codes, country)
+
+data_final_unwrangled <- inner_join(x = data_education, y = data_regions, by = "codes")
+```
+
+```{r}
+data_final_wrangled <- data_final_unwrangled %>%
+  filter(region == "Africa" | region == "Asia") %>%
+  filter(!is.na(completion_rate_lsecondary)) %>%
+  filter(!is.na(literacy_rate_youth)) %>%
+  distinct(.keep_all = TRUE) %>%
+  select(region, country, completion_rate_lsecondary, literacy_rate_youth)
+
+glimpse(data_final_wrangled)
+```
+
+## Visualization of the raw data 
+```{r}
+# A Scatterplot to visualize the association between completion rate and literacy rate
+ggplot(data_final_wrangled, aes(x = completion_rate_lsecondary, y = literacy_rate_youth)) +
+  geom_point() +
+  labs(title = "Literacy Rate vs Completion Rate (No Labels)",
+       x = "Completion Rate for Lower Secondary Education",
+       y = "Literacy Rate among Youth (15-24 years)") +
+  theme_minimal() + geom_smooth(se=FALSE, method = "lm")
+```
+
+*Conclusion:*
+*this plot shows a positive association between "Completion Rate for Lower Secondary Education" and "Literacy Rate among Youth (15-24 years)" for both regions.*
+
+
+```{r}
+# A histogram to show the distribution of the average completion_rate_lsecondary
+ggplot(data_final_wrangled, aes(x = completion_rate_lsecondary)) +
+  geom_histogram(bins = 20, binwidth = 5, fill = "skyblue", color = "black") +
+  labs(title = "Distribution of Completion Rates for Lower Secondary Education",
+       x = "Completion Rate (%)",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+*Conclusion:*
+*In general, based on the histogram, the data is centered at 50%, and the plot is unimodal and mostly symmetric. This plot shows that completion rate for lower secondary education is very average for both Asian and African regions; most countries have a completion rates over 50%.*
+
+
+```{r}
+## A histogram to show the distribution of the average youth_literacy_rate
+ggplot(data_final_wrangled, aes(x = literacy_rate_youth)) +
+  geom_histogram(binwidth = 5, fill = "coral", color = "black") +
+  labs(title = "Distribution of Literacy Rates among Youth (15-24 years)",
+       x = "Literacy Rate (%)",
+       y = "Frequency") +
+  theme_minimal()
+```
+
+*Conclusion:*
+*Based on the histogram, the data is mostly concentrated around 100% literacy rate. Besides that, the plot is left-skewed. This plot shows that most youth around age 15-24 have 100% literacy skills. *
+
+
+```{r}
+# Histogram for SDG Goal 4 Score
+sdg_score <- sdg %>% 
+  rename(country = country_label,
+         goal_4_trend = `Goal 4 Trend`,
+         goal_4_score = `Goal 4 Score`) %>%
+  select(country, goal_4_trend, goal_4_score)
+
+data_sdg <- inner_join(x = data_final_unwrangled, y = sdg_score, by = "country")
+
+new_sdg <- data_sdg %>% filter(region == "Asia" | region == "Africa") %>%
+  filter(!is.na(literacy_rate_youth)) %>%
+  filter(!is.na(completion_rate_lsecondary)) %>%
+  filter(!is.na(goal_4_score)) %>%
+  distinct(.keep_all = TRUE) %>%
+  select(region, country , literacy_rate_youth, completion_rate_lsecondary, goal_4_trend, goal_4_score)
+
+ggplot(data = new_sdg, aes(x = goal_4_score)) + geom_histogram(bins = 20, color = "black", fill = "coral") + labs(x = "Goal 4 Score")
+```
+
+*Conclusion:*
+*Based on the two histograms, most countries have achieved SDG goal 4 by score 50 - 100, and most data is concentrated around 60 - 100, the plot is likely left-skewed*
+
+
+## Elbow Approach 
+We use Elbow approach to estimate the number of cluster we need in our simulation
+
+```{r}
+# The code for an appropriate number of clusters for completion_rate_lsecondary
+explained_ss_completion <- rep(NA, 20)
+for(k in 1:20){
+  clustering_completion <- kmeans(data_final_wrangled$completion_rate_lsecondary, centers = k)
+  explained_ss_completion[k] <- clustering_completion$betweenss / clustering_completion$totss
+}
+
+# Plotting the elbow graph for the completion rate
+ggplot() + 
+  aes(x = 1:20, y = 1 - explained_ss_completion) +
+  geom_line() + 
+  geom_point() +
+  labs(x = "Number of Clusters", 
+       y = "Remaining Variation",
+       title = "K-Means Clustering Performance on Completion Rate") +
+  theme_minimal()
+```
+
+
+```{r}
+# The code for the appropriate number of clusters for literacy_rate_youth
+explained_ss_literacy <- rep(NA, 20)
+for(k in 1:20){
+  clustering_literacy <- kmeans(data_final_wrangled$literacy_rate_youth, centers = k)
+  explained_ss_literacy[k] <- clustering_literacy$betweenss / clustering_literacy$totss
+}
+
+# Plotting the elbow graph for the literacy rate
+ggplot() + 
+  aes(x = 1:20, y = 1 - explained_ss_literacy) +
+  geom_line() + 
+  geom_point() +
+  labs(x = "Number of Clusters", 
+       y = "Remaining Variation",
+       title = "K-Means Clustering Performance on Literacy Rate") +
+  theme_minimal()
+```
+
+
+```{r}
+# The code for the appropriate number of clusters for completion_rate_lsecondary vs literacy_rate_youth
+
+data_for_clustering <- data_final_wrangled %>%
+  select(completion_rate_lsecondary, literacy_rate_youth)
+
+explained_ss_scatter <- rep(NA, 20)
+for (k in 1:20) {
+  clustering_scatter <- kmeans(data_for_clustering, centers = k)
+  explained_ss_scatter[k] <- clustering_scatter$betweenss / clustering_scatter$totss
+}
+
+# Plotting the elbow graph for the combined data
+ggplot() + 
+  aes(x = 1:20, y = 1 - explained_ss_scatter) +
+  geom_line() + 
+  geom_point() +
+  labs(x = "Number of Clusters", 
+       y = "Remaining Variation",
+       title = "K-Means Clustering Performance on Literacy Rate vs. Completion Rate") +
+  theme_minimal()
+```
+After we use Elbow approach, we can see in all three graphs that after point 5, it make no significant difference if we add more cluster. Therefore, we can pick 5 as our guess for the number of cluster. 
+
+
+## Simulating K-Means Algorithm 
+```{r}
+k <- 5
+set.seed(120000)
+clustering <- kmeans(data_for_clustering, k)
+data_final_wrangled <- 
+  data_final_wrangled %>%
+  mutate(cluster = clustering$cluster)
+
+clustering_4 <- kmeans(new_sdg$goal_4_score, k)
+new_sdg <-
+  new_sdg %>% 
+  mutate(cluster = clustering_4$cluster)
+
+ggplot(data_final_wrangled, aes(x = completion_rate_lsecondary, group = cluster, fill = cluster)) +
+  geom_histogram() +
+  labs(title = "Distribution of Completion Rates for Lower Secondary Education",
+       x = "Completion Rate (%)",
+       y = "Frequency") +
+  theme_minimal()
+
+ggplot(data_final_wrangled, aes(x = literacy_rate_youth, group = cluster, fill = cluster)) +
+  geom_histogram() +
+  labs(title = "Distribution of Literacy Rates among Youth (15-24 years)",
+       x = "Literacy Rate (%)",
+       y = "Frequency") +
+  theme_minimal()
+
+ggplot(data_final_wrangled, aes(x = completion_rate_lsecondary, y = literacy_rate_youth, color = cluster)) +
+  geom_point() +
+  labs(title = "Literacy Rate vs Completion Rate",
+       x = "Completion Rate for Lower Secondary Education",
+       y = "Literacy Rate among Youth (15-24 years)") +
+  theme_minimal() 
+
+ggplot(data = new_sdg, aes(x = goal_4_score, group = cluster, fill = cluster)) + 
+    geom_histogram() +
+    labs(title = "Goal 4 Score",
+       x = "Score",
+       y = "Count") +
+  theme_minimal()
+```
+
+
+```{r}
+# Count the number of countries from each region in each cluster
+cluster_continent_counts <- data_final_wrangled %>%
+  group_by(cluster, region) %>%
+  summarise(count = n()) %>%
+  spread(key = region, value = count, fill = 0)
+
+cluster_score_counts <- new_sdg %>%
+  group_by(cluster, region) %>%
+  summarise(count = n()) %>%
+  spread(key = region, value = count, fill = 0)
+
+# Calculate the percentage of countries from each region in each cluster
+cluster_continent_percentages <- cluster_continent_counts %>%
+  mutate(total = Africa + Asia) %>%
+  mutate(percentage_africa = (Africa / total) * 100,
+         percentage_asia = (Asia / total) * 100)
+
+cluster_score_percentages <- cluster_score_counts %>%
+  mutate(total = Africa + Asia) %>%
+  mutate(percentage_africa = (Africa / total) * 100,
+         percentage_asia = (Asia / total) * 100)
+
+
+# View the counts and percentages
+cluster_continent_percentages
+cluster_score_percentages
+```
+
+
+## Conclusion for Research Question 2
+The cluster plots and the summary table show that there are a significant number of countries in Asia have high literacy rates, since cluster 1 represent the highest completion rates and literacy rates, 5 represents the least. In the other hand, countries in Africa generally have lower education quality than Asian countries. 
+
+In addition, based on cluster summary table 2, which is based on the goal score for African vs Asian countries, we can see that, as expected, the Asian countries dominate cluster 3 -- which has the highest score, while we see a majority of African countries in the lower scoring clusters 1 and 2. However, we see that there is a similarity between the two continents in cluster 4 -- and this can suggest that these specific countries within Africa and Asia may have similar educational policies and infrastructure surrounding education
+
+# [Research Question 3: How is the proportion of children in countries in Africa using “at least basic drinking water services” compared to countries in Asia?]
+
+## Data Cleaning and Wrangling
+```{r}
+
+sdg_score <- sdg %>% 
+  rename(country = country_label,
+         goal_6_trend = `Goal 6 Trend`,
+         goal_6_score = `Goal 6 Score`) %>%
+  select(country, goal_6_trend, goal_6_score)
+
+data_1 <- country_indicators %>%
+  rename(codes = iso3,
+         drink_water_2020 = `sowc_wash__households-2020_at-least-basic-drinking-water-services_total`) %>%
+  select(codes, drink_water_2020) 
+
+data_2 <- country_codes %>% 
+  rename (region = `Region Name_en (M49)`,
+          codes = `ISO-alpha3 Code (M49)`,
+          country = `Country or Area_en (M49)`) %>% 
+  select(region, codes, country)
+
+data_clean <- inner_join(x = data_1, y = data_2, by = "codes")
+data_sdg <- inner_join(x = data_clean, y = sdg_score, by = "country")
+
+glimpse(data_1)
+glimpse(data_2)
+glimpse(data_clean)
+glimpse(data_sdg)
+
+```
+
+
+```{r}
+
+africa_asia <- data_sdg %>% filter(region == "Africa" | region == "Asia") %>%
+  filter(!is.na(drink_water_2020)) %>%
+  filter(!is.na(goal_6_score)) %>%
+  distinct(.keep_all = TRUE) %>%
+  select(region, country , drink_water_2020, goal_6_trend, goal_6_score)
+
+glimpse(africa_asia)
+
+```
+
+## Visualization of the raw data
+```{r}
+#Histogram for the result of basic drinking water of Asia and Africa Countries
+africa_asia %>% ggplot(aes(x = drink_water_2020)) +
+  geom_histogram(bins=15, color="black", fill="lightblue") +
+  labs(x = "Proportion of Children Using Basic Drinking Water") +
+  facet_wrap(~region)
+```
+*Conclusion: Based on the facet wrapped histograms, we can clearly tell that the proportion of children using clean water is much higher in Asia than Africa. The histogram for Africa is unimodel, and the other one for Asia is very left-skewed. Based on the plots, we can make a prediction by saying more children in Asian countries can access the drinking water, which proves quality of life of children in Asia is better than Africa by side.*
+
+```{r}
+#Boxplot for the result of basic drinking water of Asia and Africa Countries
+africa_asia %>% ggplot(aes(x = region, y=drink_water_2020)) +
+  geom_boxplot() +
+  labs(x = "Proportion of Children Using Basic Drinking Water")
+```
+
+*Conclusion: The boxplot shows that the median of proportion of children getting clean drinking water is much higher in Asian countries than African countries. The median for Asia is about 95%, for Africa is 70%. And the range of the IQR for Africa is quite wide, which shows proportion of children using drinking water is very different among the African countries, but in Asian countries, the IQR is very narrow, which indicates that most countries have a high proportion of children using drinking water. There are couple of outliers for Asia’s boxplot, but these outliers are actually within the range of IQR for African countries. Based on these points, we can predict that the general quality of life of children is higher in Asia.*
+
+
+```{r}
+#Histogram for the result of goal 6 score of Asia and Africa Countries
+africa_asia %>% ggplot(aes(x = goal_6_score)) + 
+  geom_histogram(bins = 11, color = "black", fill = "pink") + 
+  labs(x = "Goal 6 Score") + 
+  facet_wrap(~region)
+```
+*Conclusion: The two histograms are both likely unimodal, but most data is concentrated around the range of score 50-60 for African countries; on the other hand, most data is concentrated around score 70. There are countries achieving above score 80 in Asia, but none in Africa. Based on this fact, we can make prediction says that the overall quality of life for children is higher in Asia than Africa.*
+
+
+## Define our Population and Hypotheses
+
+Population: All countries in Africa and Asia
+
+Hypotheses: The null hypothesis assumes that the proportion of children using basic drinking water in Africa and Asia is the same while the alternative hypothesis assumes that the proportion of children using basic drinking water in Africa is lower than in Asia. 
+
+$H_0$ = Prop_Asia - Prop_Africa = 0
+
+$H_1$ = Prop_Asia - Prop_Africa > 0
+
+## Define our Test Statistics
+
+Our Test Statistics will be the difference in the median of the proportion of Children using Basic Drinking Water between countries in Asia and Africa
+
+
+```{r}
+# Median in each continent
+median_obs <- 
+  africa_asia %>%
+  group_by(region) %>%
+  summarise(median_water = median(drink_water_2020))
+
+median_obs
+
+#Test Statistics: The difference in the median between two continents
+delta_median_obs <- 
+  africa_asia %>%
+  group_by(region) %>%
+  summarise(median_water = median(drink_water_2020), .groups="drop") %>%
+  summarise(value = diff(median_water)) %>%
+  as.numeric()
+
+delta_median_obs
+```
+
+## Permutation Test 
+Below is R code that simulates N = 1000 values of the test statistic delta_median_obs under the null hypothesis using a permutation test. In this test, we assume that our groups are identical under our null hypothesis. Mixing the two groups together, randomly generating new groups with the same sizes, and then recomputing our test statistic each time therefore should allow us to simulate values from the sampling distribution provided our sample size is large enough.
+
+```{r}
+# simulation info
+num_trials <- 1000  # number of permutations
+
+# random seed
+set.seed(1010121100)
+
+# simulate!
+delta_median_simulations <- rep(NA, num_trials)
+for(i in 1:num_trials){
+  # perform a random permutation
+  simdata <- 
+    africa_asia %>% 
+    mutate(region = sample(region, replace=FALSE))
+  # compute the simulated test statistic
+  delta_median_sim <- 
+    simdata %>% 
+    group_by(region) %>%
+    summarise(median_water = median(drink_water_2020), .groups="drop") %>%
+    summarise(value = diff(median_water)) %>%
+    as.numeric()
+  # store the simulated value
+  delta_median_simulations[i] <- delta_median_sim
+}
+```
+
+```{r}
+# Plot the simulated value 
+
+ggplot()+
+  geom_histogram(bins = 30, color = "black", fill = "tan2")+
+  aes(x= delta_median_simulations) +
+  labs(title = "Difference in Median between Asia and Africa")
+```
+
+```{r}
+# calculate 1-sided p-value
+
+pvalue_1side <- 
+  sum(delta_median_simulations >= delta_median_obs) / num_trials
+
+
+print(pvalue_1side)
+```
+## Conclusion for Research Question 3
+
+Since the $p$-value = 0 < $\alpha$ = 0.05, therefore we have strong evidence against the null hypothesis that the proportion of children using basic drinking water in countries in Africa and Asia are the same. Thus, we can say that countries in Africa have lower proportion of children using basic drinking water compared to countries in Asia. 
+
+# General Conclusion
+
+By research question 1, 2, and 3, we conclude that the child mortality rate in countries in Africa is higher than countries in Asia, countries in Africa generally have lower education quality than countries in Asia, and countries in Africa have lower proportion of children using basic drinking water compared to countries in Asia. Therefore, based on our research that corresponds to child mortality rate, education, and access to water, we can conclude that the overall quality of life of children in Asia is better than in Africa. 
